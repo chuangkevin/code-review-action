@@ -55,12 +55,6 @@ func Run(cfg *config.Config) (*Result, error) {
 		return &Result{Status: "success"}, nil
 	}
 	fmt.Printf("   📄 Diff size: %d bytes\n", len(diff))
-	// Debug: print first 500 chars of diff
-	preview := diff
-	if len(preview) > 500 {
-		preview = preview[:500]
-	}
-	fmt.Printf("   📄 Diff preview:\n---\n%s\n---\n", preview)
 
 	prCtx := reviewer.PRContext{
 		Title:      prInfo.Title,
@@ -227,23 +221,9 @@ func Run(cfg *config.Config) (*Result, error) {
 		fmt.Printf("   ⚠️  失敗的 reviewer: %v\n", output.FailedRoles)
 	}
 
-	// 9. Post to Gitea
+	// 9. Post to Gitea — only summary discussion comment
 	fmt.Println()
 	fmt.Println("📤 發送 Review 到 Gitea...")
-	for i, c := range output.InlineComments {
-		body := fmt.Sprintf("**[%s]**\n\n%s", c.Severity, c.Body)
-		err := giteaClient.PostReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, gitea.ReviewComment{
-			Body:   body,
-			Path:   c.File,
-			NewPos: c.Line,
-		})
-		if err != nil {
-			fmt.Printf("   ⚠️  Inline comment %d 發送失敗 (%s:%d): %v\n", i+1, c.File, c.Line, err)
-		} else {
-			fmt.Printf("   💬 [%s] %s:%d\n", c.Severity, c.File, c.Line)
-		}
-	}
-
 	fmt.Println("   📝 發送總結 comment...")
 	summary := assembler.BuildSummaryComment(output, prCtx, cfg.PRNumber,
 		prInfo.ChangedFiles, prInfo.Additions, prInfo.Deletions)

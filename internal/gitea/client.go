@@ -308,37 +308,21 @@ type IssueComment struct {
 
 // ReplyToReviewComment posts a reply in the review comment thread.
 // commentID is the ID of the original review comment to reply to.
-func (c *Client) ReplyToReviewComment(owner, repo string, prNumber int, commentID int, body string) error {
-	// Gitea API: create a review comment reply using in_reply_to
-	payload := map[string]string{"body": body}
-
-	// Gitea's review comment threads use issue comments API
-	replyURL := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/comments/%d/replies", c.baseURL, owner, repo, commentID)
-	replyPayload, _ := json.Marshal(map[string]string{"body": body})
-	_ = payload // fallback data
-
-	req, err := http.NewRequest("POST", replyURL, bytes.NewReader(replyPayload))
-	if err != nil {
-		return err
+// ReplyAsReview submits a new review with an inline comment on the same file:line.
+// This makes the reply appear in Files Changed tab near the original comment.
+func (c *Client) ReplyAsReview(owner, repo string, prNumber int, filePath string, line int, body string) error {
+	review := CreateReviewRequest{
+		Body:  "",
+		Event: "COMMENT",
+		Comments: []ReviewLineComment{
+			{
+				Path:        filePath,
+				NewPosition: line,
+				Body:        body,
+			},
+		},
 	}
-	c.setHeaders(req)
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("reply to comment: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
-		return nil
-	}
-
-	// Fallback: try posting as a regular issue comment (at least it shows up)
-	respBody, _ := io.ReadAll(resp.Body)
-	fmt.Printf("   ⚠️  Reply API (status %d): %s, trying fallback...\n", resp.StatusCode, string(respBody))
-
-	return c.PostComment(owner, repo, prNumber, body)
+	return c.SubmitReview(owner, repo, prNumber, review)
 }
 
 // ResolveComment marks a review comment as resolved.

@@ -11,8 +11,14 @@ import (
 	"github.com/kevinyoung1399/code-review-action/internal/reviewer"
 )
 
+type commentMatch struct {
+	Body string
+	ID   int
+	File string
+	Line int
+}
+
 // RunReply handles a developer's reply to a review comment.
-// It evaluates the reply, responds, and approves if all issues are resolved.
 func RunReply(cfg *config.Config) (*Result, error) {
 	fmt.Println()
 	fmt.Println("╔══════════════════════════════════════════════════════╗")
@@ -27,7 +33,7 @@ func RunReply(cfg *config.Config) (*Result, error) {
 	fmt.Printf("📋 PR #%d — %s 回覆了 review comment\n", cfg.PRNumber, cfg.CommentUser)
 	fmt.Printf("   💬 \"%s\"\n", truncateReply(cfg.CommentBody, 100))
 
-	// 1. Find the AI review and its comments
+	// 1. Find the AI review
 	fmt.Println()
 	fmt.Println("🔍 尋找相關的 AI review comment...")
 
@@ -36,7 +42,6 @@ func RunReply(cfg *config.Config) (*Result, error) {
 		return nil, fmt.Errorf("get reviews: %w", err)
 	}
 
-	// Find the AI review (look for our bot's review with Team Discussion header)
 	var aiReview *gitea.Review
 	for i := len(reviews) - 1; i >= 0; i-- {
 		if strings.Contains(reviews[i].Body, "Code Review — Team Discussion") {
@@ -51,95 +56,89 @@ func RunReply(cfg *config.Config) (*Result, error) {
 	}
 	fmt.Printf("   ✅ 找到 AI review (ID: %d)\n", aiReview.ID)
 
-	// 2. Get the review's inline comments
+	// 2. Get review comments + issue comments
 	reviewComments, err := giteaClient.GetReviewComments(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, aiReview.ID)
 	if err != nil {
 		return nil, fmt.Errorf("get review comments: %w", err)
 	}
 
-	// 3. Get all issue comments to find the reply context
 	issueComments, err := giteaClient.GetIssueComments(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber)
 	if err != nil {
 		return nil, fmt.Errorf("get issue comments: %w", err)
 	}
 
-	// 4. Find which AI comment the developer is replying to
-	// Gitea puts review comment replies in issue comments, referencing the original
-	// We match by finding the developer's comment and the AI comment right before it
-	originalComment, originalCommentID := findOriginalAIComment(cfg.CommentID, cfg.CommentBody, reviewComments, issueComments)
+	// 3. Find the original AI comment being replied to
+	match := findOriginalAIComment(cfg.CommentID, cfg.CommentBody, reviewComments, issueComments)
 
-	if originalComment == "" {
+	if match.Body == "" {
 		fmt.Println("   ⚠️  無法判斷這是在回覆哪個 review comment，跳過")
 		return &Result{Status: "success"}, nil
 	}
 
 	fmt.Println()
-	fmt.Printf("📝 原始 comment:\n   %s\n", truncateReply(originalComment, 150))
+	fmt.Printf("📝 原始 comment:\n   %s\n", truncateReply(match.Body, 150))
+	fmt.Printf("   📎 File: %s, Line: %d, ID: %d\n", match.File, match.Line, match.ID)
 	fmt.Printf("💬 %s 的回覆:\n   %s\n", cfg.CommentUser, truncateReply(cfg.CommentBody, 150))
 
-	// 5. Detect which reviewer persona should reply
-	originalRole := reviewer.DetectRoleFromComment(originalComment)
+	// 4. Detect reviewer persona
+	originalRole := reviewer.DetectRoleFromComment(match.Body)
 	fmt.Printf("   🎭 由 %s %s 回覆\n", reviewer.RoleEmoji(originalRole), reviewer.RoleDisplayName(originalRole))
 
-	// 6. Evaluate the reply
+	// 5. Evaluate the reply
 	fmt.Println()
 	fmt.Println("🤔 評估回覆...")
-	evalResult, err := reviewer.EvaluateReply(geminiClient, originalComment, cfg.CommentBody, cfg.CommentUser)
+	evalResult, err := reviewer.EvaluateReply(geminiClient, match.Body, cfg.CommentBody, cfg.CommentUser)
 	if err != nil {
 		return nil, fmt.Errorf("evaluate reply: %w", err)
 	}
 
-	// 7. Post the original reviewer's response
 	if evalResult.Resolved {
 		fmt.Printf("   ✅ Resolved — %s\n", evalResult.Reply)
 	} else {
 		fmt.Printf("   💬 需要進一步討論 — %s\n", evalResult.Reply)
 	}
 
+	// 6. Post reply as a new review with inline comment on the same file:line
 	replyBody := formatReplyComment(evalResult, originalRole)
-	// Reply in the review thread using the original comment ID
-	fmt.Printf("   📎 回覆到 comment ID: %d\n", originalCommentID)
-	if err := giteaClient.ReplyToReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, originalCommentID, replyBody); err != nil {
-		fmt.Printf("   ⚠️  Review thread 回覆失敗: %v, fallback 到一般 comment\n", err)
-		if err := giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody); err != nil {
-			fmt.Printf("   ⚠️  Fallback 也失敗: %v\n", err)
+
+	if match.File != "" && match.Line > 0 {
+		fmt.Printf("   📎 發送 review comment 到 %s:%d\n", match.File, match.Line)
+		if err := giteaClient.ReplyAsReview(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, match.File, match.Line, replyBody); err != nil {
+			fmt.Printf("   ⚠️  Review reply 失敗: %v, fallback 到一般 comment\n", err)
+			giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody)
 		} else {
-			fmt.Println("   ✅ 回覆已發送（一般 comment）")
+			fmt.Println("   ✅ 回覆已發送到 Files Changed")
 		}
 	} else {
-		fmt.Println("   ✅ 回覆已發送到 review thread")
+		fmt.Println("   📎 無 file:line 資訊，發送為一般 comment")
+		giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody)
 	}
 
-	// 7.5. If resolved, try to resolve the comment thread
-	if evalResult.Resolved && cfg.CommentID > 0 {
-		fmt.Println("   🔒 嘗試 resolve comment thread...")
-		if err := giteaClient.ResolveComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, cfg.CommentID); err != nil {
-			fmt.Printf("   ⚠️  Resolve 失敗（可能 Gitea 版本不支援）: %v\n", err)
-		}
-	}
-
-	// 8. Cross-domain check — does the developer's reply affect other domains?
+	// 7. Cross-domain check
 	fmt.Println()
 	fmt.Println("🔍 檢查是否涉及其他 domain...")
-	crossDomainRoles := detectCrossDomain(geminiClient, originalComment, cfg.CommentBody, originalRole)
+	crossDomainRoles := detectCrossDomain(geminiClient, match.Body, cfg.CommentBody, originalRole)
 	for _, crossRole := range crossDomainRoles {
 		fmt.Printf("   ⚡ %s %s 有話要說...\n", reviewer.RoleEmoji(crossRole), reviewer.RoleDisplayName(crossRole))
-		crossResult, err := reviewer.EvaluateCrossDomain(geminiClient, originalComment, cfg.CommentBody, cfg.CommentUser, crossRole)
+		crossResult, err := reviewer.EvaluateCrossDomain(geminiClient, match.Body, cfg.CommentBody, cfg.CommentUser, crossRole)
 		if err != nil {
 			fmt.Printf("   ⚠️  %s 回覆失敗: %v\n", reviewer.RoleDisplayName(crossRole), err)
 			continue
 		}
 		crossBody := formatReplyComment(crossResult, crossRole)
-		if err := giteaClient.ReplyToReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, originalCommentID, crossBody); err != nil {
-			fmt.Printf("   ⚠️  %s 回覆發送失敗: %v\n", reviewer.RoleDisplayName(crossRole), err)
+		if match.File != "" && match.Line > 0 {
+			if err := giteaClient.ReplyAsReview(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, match.File, match.Line, crossBody); err != nil {
+				giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, crossBody)
+			}
 		} else {
-			fmt.Printf("   ✅ %s 已補充意見\n", reviewer.RoleDisplayName(crossRole))
+			giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, crossBody)
 		}
+		fmt.Printf("   ✅ %s 已補充意見\n", reviewer.RoleDisplayName(crossRole))
 	}
 
-	// 7. Check if ALL review comments are now resolved → approve
+	// 8. Check if ALL resolved → approve
 	if evalResult.Resolved {
-		allResolved := checkAllResolved(reviewComments, issueComments, cfg.CommentID)
+		allResolved := checkAllResolved(reviewComments)
 		if allResolved {
 			fmt.Println()
 			fmt.Println("🎉 所有問題已解決，提交 APPROVE...")
@@ -165,28 +164,33 @@ func RunReply(cfg *config.Config) (*Result, error) {
 	return &Result{Status: "success"}, nil
 }
 
-// findOriginalAIComment tries to find which AI review comment the developer is replying to.
-// Returns the comment body and its ID (for replying in the correct thread).
-func findOriginalAIComment(replyCommentID int, replyBody string, reviewComments []gitea.ReviewCommentDetail, issueComments []gitea.IssueComment) (string, int) {
-	// Strategy 1: Find the issue comment matching the reply, then look backwards
+// findOriginalAIComment finds which AI review comment the developer is replying to.
+func findOriginalAIComment(replyCommentID int, replyBody string, reviewComments []gitea.ReviewCommentDetail, issueComments []gitea.IssueComment) commentMatch {
+	// Strategy 1: Look backwards from the reply in issue comments
 	for i, c := range issueComments {
 		if c.ID == replyCommentID {
 			for j := i - 1; j >= 0; j-- {
 				if isAIComment(issueComments[j].Body) {
-					return issueComments[j].Body, issueComments[j].ID
+					// Try to find matching review comment for file:line
+					for _, rc := range reviewComments {
+						if rc.Body == issueComments[j].Body || strings.Contains(rc.Body, issueComments[j].Body) || strings.Contains(issueComments[j].Body, rc.Body) {
+							return commentMatch{Body: rc.Body, ID: rc.ID, File: rc.Path, Line: rc.Line}
+						}
+					}
+					return commentMatch{Body: issueComments[j].Body, ID: issueComments[j].ID}
 				}
 			}
 		}
 	}
 
-	// Strategy 2: Check review inline comments — find one that seems related
+	// Strategy 2: Find related review inline comment
 	for _, rc := range reviewComments {
 		if isAIComment(rc.Body) && seemsRelated(replyBody, rc.Body) {
-			return rc.Body, rc.ID
+			return commentMatch{Body: rc.Body, ID: rc.ID, File: rc.Path, Line: rc.Line}
 		}
 	}
 
-	// Strategy 3: If there's only one unresolved AI review comment, use it
+	// Strategy 3: Single unresolved comment
 	var unresolved []gitea.ReviewCommentDetail
 	for _, rc := range reviewComments {
 		if isAIComment(rc.Body) && rc.Resolver == nil {
@@ -194,21 +198,21 @@ func findOriginalAIComment(replyCommentID int, replyBody string, reviewComments 
 		}
 	}
 	if len(unresolved) == 1 {
-		return unresolved[0].Body, unresolved[0].ID
+		return commentMatch{Body: unresolved[0].Body, ID: unresolved[0].ID, File: unresolved[0].Path, Line: unresolved[0].Line}
 	}
 
-	// Strategy 4: Pick the most recent AI review comment
+	// Strategy 4: Most recent AI review comment
 	for i := len(reviewComments) - 1; i >= 0; i-- {
 		if isAIComment(reviewComments[i].Body) {
-			return reviewComments[i].Body, reviewComments[i].ID
+			rc := reviewComments[i]
+			return commentMatch{Body: rc.Body, ID: rc.ID, File: rc.Path, Line: rc.Line}
 		}
 	}
 
-	return "", 0
+	return commentMatch{}
 }
 
 func isAIComment(body string) bool {
-	// AI comments contain role markers like **Shield**, **Rex**, etc.
 	markers := []string{"**Shield**", "**Rex**", "**Aria**", "**Biz**", "**Arch**", "[critical]", "[warning]", "[suggestion]"}
 	for _, m := range markers {
 		if strings.Contains(body, m) {
@@ -219,7 +223,6 @@ func isAIComment(body string) bool {
 }
 
 func seemsRelated(reply, originalComment string) bool {
-	// Simple heuristic: check if reply mentions file names or key terms from original
 	words := strings.Fields(reply)
 	for _, w := range words {
 		if len(w) > 3 && strings.Contains(originalComment, w) {
@@ -229,8 +232,7 @@ func seemsRelated(reply, originalComment string) bool {
 	return false
 }
 
-func checkAllResolved(reviewComments []gitea.ReviewCommentDetail, issueComments []gitea.IssueComment, currentReplyID int) bool {
-	// Count AI comments that are still unresolved
+func checkAllResolved(reviewComments []gitea.ReviewCommentDetail) bool {
 	for _, rc := range reviewComments {
 		if isAIComment(rc.Body) && rc.Resolver == nil {
 			return false
@@ -250,7 +252,6 @@ func formatReplyComment(result *reviewer.ConversationResult, role string) string
 	return fmt.Sprintf("%s **%s** · %s\n\n💬 %s", emoji, name, title, result.Reply)
 }
 
-// detectCrossDomain asks Gemini if the developer's reply touches other domains.
 func detectCrossDomain(client *gemini.Client, originalComment, developerReply, originalRole string) []string {
 	allRoles := []string{"frontend", "backend", "security", "business", "architecture"}
 	var otherRoles []string
@@ -292,7 +293,6 @@ func detectCrossDomain(client *gemini.Client, originalComment, developerReply, o
 		return nil
 	}
 
-	// Validate roles
 	validSet := make(map[string]bool)
 	for _, r := range otherRoles {
 		validSet[r] = true

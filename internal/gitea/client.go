@@ -307,11 +307,17 @@ type IssueComment struct {
 }
 
 // ReplyToReviewComment posts a reply in the review comment thread.
-func (c *Client) ReplyToReviewComment(owner, repo string, prNumber, reviewID int, body string) error {
-	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d/reviews/%d/comments", c.baseURL, owner, repo, prNumber, reviewID)
+// commentID is the ID of the original review comment to reply to.
+func (c *Client) ReplyToReviewComment(owner, repo string, prNumber int, commentID int, body string) error {
+	// Gitea API: create a review comment reply using in_reply_to
+	payload := map[string]string{"body": body}
 
-	payload, _ := json.Marshal(map[string]string{"body": body})
-	req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+	// Gitea's review comment threads use issue comments API
+	replyURL := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/comments/%d/replies", c.baseURL, owner, repo, commentID)
+	replyPayload, _ := json.Marshal(map[string]string{"body": body})
+	_ = payload // fallback data
+
+	req, err := http.NewRequest("POST", replyURL, bytes.NewReader(replyPayload))
 	if err != nil {
 		return err
 	}
@@ -320,15 +326,19 @@ func (c *Client) ReplyToReviewComment(owner, repo string, prNumber, reviewID int
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("reply to review comment: %w", err)
+		return fmt.Errorf("reply to comment: %w", err)
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("reply to review comment (status %d): %s", resp.StatusCode, respBody)
+	if resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusCreated {
+		return nil
 	}
-	return nil
+
+	// Fallback: try posting as a regular issue comment (at least it shows up)
+	respBody, _ := io.ReadAll(resp.Body)
+	fmt.Printf("   ⚠️  Reply API (status %d): %s, trying fallback...\n", resp.StatusCode, string(respBody))
+
+	return c.PostComment(owner, repo, prNumber, body)
 }
 
 // ResolveComment marks a review comment as resolved.

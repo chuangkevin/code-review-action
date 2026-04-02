@@ -66,7 +66,7 @@ func RunReply(cfg *config.Config) (*Result, error) {
 	// 4. Find which AI comment the developer is replying to
 	// Gitea puts review comment replies in issue comments, referencing the original
 	// We match by finding the developer's comment and the AI comment right before it
-	originalComment := findOriginalAIComment(cfg.CommentID, cfg.CommentBody, reviewComments, issueComments)
+	originalComment, originalCommentID := findOriginalAIComment(cfg.CommentID, cfg.CommentBody, reviewComments, issueComments)
 
 	if originalComment == "" {
 		fmt.Println("   ⚠️  無法判斷這是在回覆哪個 review comment，跳過")
@@ -97,8 +97,9 @@ func RunReply(cfg *config.Config) (*Result, error) {
 	}
 
 	replyBody := formatReplyComment(evalResult, originalRole)
-	// Reply in the review thread, not as a standalone comment
-	if err := giteaClient.ReplyToReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, aiReview.ID, replyBody); err != nil {
+	// Reply in the review thread using the original comment ID
+	fmt.Printf("   📎 回覆到 comment ID: %d\n", originalCommentID)
+	if err := giteaClient.ReplyToReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, originalCommentID, replyBody); err != nil {
 		fmt.Printf("   ⚠️  Review thread 回覆失敗: %v, fallback 到一般 comment\n", err)
 		if err := giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody); err != nil {
 			fmt.Printf("   ⚠️  Fallback 也失敗: %v\n", err)
@@ -129,7 +130,7 @@ func RunReply(cfg *config.Config) (*Result, error) {
 			continue
 		}
 		crossBody := formatReplyComment(crossResult, crossRole)
-		if err := giteaClient.ReplyToReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, aiReview.ID, crossBody); err != nil {
+		if err := giteaClient.ReplyToReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, originalCommentID, crossBody); err != nil {
 			fmt.Printf("   ⚠️  %s 回覆發送失敗: %v\n", reviewer.RoleDisplayName(crossRole), err)
 		} else {
 			fmt.Printf("   ✅ %s 已補充意見\n", reviewer.RoleDisplayName(crossRole))
@@ -165,16 +166,14 @@ func RunReply(cfg *config.Config) (*Result, error) {
 }
 
 // findOriginalAIComment tries to find which AI review comment the developer is replying to.
-func findOriginalAIComment(replyCommentID int, replyBody string, reviewComments []gitea.ReviewCommentDetail, issueComments []gitea.IssueComment) string {
-	// Strategy 1: Find the issue comment matching the reply, then look at context
-	// In Gitea, review thread replies appear as issue comments.
-	// The reply might reference the original review comment by being in the same thread.
+// Returns the comment body and its ID (for replying in the correct thread).
+func findOriginalAIComment(replyCommentID int, replyBody string, reviewComments []gitea.ReviewCommentDetail, issueComments []gitea.IssueComment) (string, int) {
+	// Strategy 1: Find the issue comment matching the reply, then look backwards
 	for i, c := range issueComments {
 		if c.ID == replyCommentID {
-			// Look backwards for the nearest AI comment
 			for j := i - 1; j >= 0; j-- {
 				if isAIComment(issueComments[j].Body) {
-					return issueComments[j].Body
+					return issueComments[j].Body, issueComments[j].ID
 				}
 			}
 		}
@@ -183,30 +182,29 @@ func findOriginalAIComment(replyCommentID int, replyBody string, reviewComments 
 	// Strategy 2: Check review inline comments — find one that seems related
 	for _, rc := range reviewComments {
 		if isAIComment(rc.Body) && seemsRelated(replyBody, rc.Body) {
-			return rc.Body
+			return rc.Body, rc.ID
 		}
 	}
 
-	// Strategy 3: If there's only one unresolved AI review comment, assume it's that one
-	var unresolvedComments []string
+	// Strategy 3: If there's only one unresolved AI review comment, use it
+	var unresolved []gitea.ReviewCommentDetail
 	for _, rc := range reviewComments {
 		if isAIComment(rc.Body) && rc.Resolver == nil {
-			unresolvedComments = append(unresolvedComments, rc.Body)
+			unresolved = append(unresolved, rc)
 		}
 	}
-	if len(unresolvedComments) == 1 {
-		return unresolvedComments[0]
+	if len(unresolved) == 1 {
+		return unresolved[0].Body, unresolved[0].ID
 	}
 
-	// Strategy 4: If reply doesn't match any specific comment but there are AI comments,
-	// pick the most recent one (last in list)
+	// Strategy 4: Pick the most recent AI review comment
 	for i := len(reviewComments) - 1; i >= 0; i-- {
 		if isAIComment(reviewComments[i].Body) {
-			return reviewComments[i].Body
+			return reviewComments[i].Body, reviewComments[i].ID
 		}
 	}
 
-	return ""
+	return "", 0
 }
 
 func isAIComment(body string) bool {

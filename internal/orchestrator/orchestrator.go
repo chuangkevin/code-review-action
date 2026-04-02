@@ -55,6 +55,12 @@ func Run(cfg *config.Config) (*Result, error) {
 		return &Result{Status: "success"}, nil
 	}
 	fmt.Printf("   📄 Diff size: %d bytes\n", len(diff))
+	// Debug: print first 500 chars of diff
+	preview := diff
+	if len(preview) > 500 {
+		preview = preview[:500]
+	}
+	fmt.Printf("   📄 Diff preview:\n---\n%s\n---\n", preview)
 
 	prCtx := reviewer.PRContext{
 		Title:      prInfo.Title,

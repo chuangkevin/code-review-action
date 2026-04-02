@@ -28,7 +28,15 @@ type PRInfo struct {
 }
 
 type PRUser struct {
-	Login string `json:"login"`
+	Login    string `json:"login"`
+	FullName string `json:"full_name"`
+}
+
+func (u PRUser) DisplayName() string {
+	if u.FullName != "" {
+		return u.FullName
+	}
+	return u.Login
 }
 
 type PRBranch struct {

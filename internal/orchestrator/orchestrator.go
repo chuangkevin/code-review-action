@@ -42,7 +42,7 @@ func Run(cfg *config.Config) (*Result, error) {
 		return nil, fmt.Errorf("get PR info: %w", err)
 	}
 	fmt.Printf("   📌 %s\n", prInfo.Title)
-	fmt.Printf("   👤 Author: %s | Branch: %s → %s\n", prInfo.User.Login, prInfo.Head.Ref, prInfo.Base.Ref)
+	fmt.Printf("   👤 Author: %s | Branch: %s → %s\n", prInfo.User.DisplayName(), prInfo.Head.Ref, prInfo.Base.Ref)
 	fmt.Printf("   📊 %d files changed, +%d -%d\n", prInfo.ChangedFiles, prInfo.Additions, prInfo.Deletions)
 
 	fmt.Println("   📥 取得 diff...")
@@ -59,7 +59,7 @@ func Run(cfg *config.Config) (*Result, error) {
 	prCtx := reviewer.PRContext{
 		Title:      prInfo.Title,
 		Body:       prInfo.Body,
-		Author:     prInfo.User.Login,
+		Author:     prInfo.User.DisplayName(),
 		Branch:     prInfo.Head.Ref,
 		BaseBranch: prInfo.Base.Ref,
 	}
@@ -271,7 +271,7 @@ func Run(cfg *config.Config) (*Result, error) {
 			fmt.Println("   📱 發送 Slack 通知...")
 			prURL := fmt.Sprintf("%s/%s/%s/pulls/%d", cfg.GiteaURL, cfg.RepoOwner, cfg.RepoName, cfg.PRNumber)
 			prTitle := fmt.Sprintf("#%d %s", cfg.PRNumber, prInfo.Title)
-			if err := notify.SendSlack(cfg.SlackWebhookURL, output, prURL, prTitle, prInfo.User.Login); err != nil {
+			if err := notify.SendSlack(cfg.SlackWebhookURL, output, prURL, prTitle, prInfo.User.DisplayName()); err != nil {
 				fmt.Printf("   ⚠️  Slack 通知失敗: %v\n", err)
 			} else {
 				fmt.Println("   ✅ Slack 通知已發送")

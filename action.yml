@@ -1,0 +1,52 @@
+name: "AI Code Review"
+description: "Multi-role AI code review for Gitea PRs using Gemini"
+author: "Kevin"
+
+inputs:
+  gitea_token:
+    description: "Gitea API token"
+    required: true
+  gemini_api_keys:
+    description: "Gemini API keys, comma-separated"
+    required: true
+  gemini_model:
+    description: "Gemini model name"
+    required: false
+    default: "gemini-2.5-flash"
+  skills_repo:
+    description: "HPSkills repo URL"
+    required: false
+  skills_repo_token:
+    description: "Token to clone skills repo"
+    required: false
+  slack_webhook_url:
+    description: "Slack Incoming Webhook URL"
+    required: false
+  slack_notify:
+    description: "Slack notification strategy: always | on_issues | off"
+    required: false
+    default: "on_issues"
+  language:
+    description: "Review language"
+    required: false
+    default: "zh-TW"
+  max_diff_size:
+    description: "Max diff size in bytes before batching"
+    required: false
+    default: "100000"
+  review_roles:
+    description: "Enabled reviewers, comma-separated"
+    required: false
+    default: "frontend,backend,security,business,architecture"
+  cooldown_duration:
+    description: "API key cooldown seconds after 429"
+    required: false
+    default: "120"
+  max_retries:
+    description: "Max retries on 429"
+    required: false
+    default: "10"
+
+runs:
+  using: "docker"
+  image: "Dockerfile"

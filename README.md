@@ -16,14 +16,22 @@ Multi-role AI code review action，在 PR 建立/更新時自動觸發。使用 
 
 ### 1. 建立 Secrets
 
-在 Gitea repo 的 **Settings → Actions → Secrets** 中建立：
+在 Gitea **組織或 repo** 的 **Settings → Actions → Secrets** 中建立：
 
 | Secret 名稱 | 必要 | 說明 |
-|-------------|------|------|
-| `GITEA_TOKEN` | **必要** | Gitea API token，需要有讀取 PR 和發表 comment 的權限。在 **Settings → Applications → Generate New Token** 建立，勾選 `repo` 權限 |
+|---------------|------|------|
+| `REVIEW_TOKEN` | **必要** | Gitea API token。到 **個人 Settings → Applications → Generate New Token** 建立，權限需勾選 `repository`（Read/Write）和 `issue`（Read/Write）。注意：不能用 `GITEA_` 開頭（Gitea 保留前綴） |
 | `GEMINI_API_KEYS` | **必要** | Gemini API keys，多把用逗號分隔（例如 `key1,key2,key3`）。到 [Google AI Studio](https://aistudio.google.com/apikey) 取得 |
-| `SKILLS_REPO_TOKEN` | 選填 | 用來 clone HPSkills repo 的 Gitea token（如果 skills repo 是 private） |
+| `SKILLS_REPO_TOKEN` | 選填 | 用來 clone HPSkills repo 的 Gitea token（如果 skills repo 是 private），只需 `repository` Read 權限 |
 | `SLACK_WEBHOOK_URL` | 選填 | Slack Incoming Webhook URL，用於發送 review 通知。在 Slack App 的 **Incoming Webhooks** 設定取得 |
+
+#### GITEA_TOKEN 權限說明
+
+| 權限 | 用途 |
+|------|------|
+| `repository` Read | 讀取 PR 資訊和 diff |
+| `repository` Write | 發表 inline review comment |
+| `issue` Write | 發表總結 comment |
 
 ### 2. 建立 Workflow
 
@@ -42,7 +50,7 @@ jobs:
       - name: AI Code Review
         uses: HP_TOOL/code-review-action@main
         with:
-          gitea_token: ${{ secrets.GITEA_TOKEN }}
+          gitea_token: ${{ secrets.REVIEW_TOKEN }}
           gemini_api_keys: ${{ secrets.GEMINI_API_KEYS }}
           skills_repo: https://gitea.housefun.com.tw/HP/HPSkills.git
           skills_repo_token: ${{ secrets.SKILLS_REPO_TOKEN }}

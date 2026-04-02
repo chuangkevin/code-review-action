@@ -27,6 +27,12 @@ type Config struct {
 	RepoOwner      string
 	RepoName       string
 	PRNumber       int
+
+	// Event context
+	EventName string // "pull_request" or "issue_comment"
+	CommentID int    // for issue_comment events
+	CommentBody string
+	CommentUser string
 }
 
 func (c *Config) CooldownDurationTime() time.Duration {
@@ -94,8 +100,13 @@ func Load() (*Config, error) {
 		cfg.RepoName = os.Getenv("GITEA_REPO_NAME")
 	}
 
-	// PR number from event JSON
-	cfg.PRNumber = loadPRNumberFromEvent()
+	// Event type and context
+	cfg.EventName = os.Getenv("GITHUB_EVENT_NAME")
+	event := loadEvent()
+	cfg.PRNumber = event.PRNumber
+	cfg.CommentID = event.CommentID
+	cfg.CommentBody = event.CommentBody
+	cfg.CommentUser = event.CommentUser
 
 	return cfg, nil
 }
@@ -136,33 +147,64 @@ func splitAndTrim(s string) []string {
 	return result
 }
 
-// loadPRNumberFromEvent reads the PR number from the GitHub Actions event JSON.
-// Gitea Actions sets GITHUB_EVENT_PATH to a file containing the webhook payload.
-func loadPRNumberFromEvent() int {
+type eventData struct {
+	PRNumber    int
+	CommentID   int
+	CommentBody string
+	CommentUser string
+}
+
+func loadEvent() eventData {
 	eventPath := os.Getenv("GITHUB_EVENT_PATH")
 	if eventPath == "" {
-		return 0
+		return eventData{}
 	}
 
 	data, err := os.ReadFile(eventPath)
 	if err != nil {
 		fmt.Printf("⚠️  無法讀取 event file: %v\n", err)
-		return 0
+		return eventData{}
 	}
 
-	var event struct {
+	var raw struct {
 		Number      int `json:"number"`
 		PullRequest struct {
 			Number int `json:"number"`
 		} `json:"pull_request"`
+		Issue struct {
+			Number int `json:"number"`
+		} `json:"issue"`
+		Comment struct {
+			ID   int    `json:"id"`
+			Body string `json:"body"`
+			User struct {
+				Login    string `json:"login"`
+				FullName string `json:"full_name"`
+			} `json:"user"`
+		} `json:"comment"`
 	}
-	if err := json.Unmarshal(data, &event); err != nil {
+	if err := json.Unmarshal(data, &raw); err != nil {
 		fmt.Printf("⚠️  無法解析 event JSON: %v\n", err)
-		return 0
+		return eventData{}
 	}
 
-	if event.PullRequest.Number > 0 {
-		return event.PullRequest.Number
+	ed := eventData{
+		CommentID:   raw.Comment.ID,
+		CommentBody: raw.Comment.Body,
+		CommentUser: raw.Comment.User.FullName,
 	}
-	return event.Number
+	if ed.CommentUser == "" {
+		ed.CommentUser = raw.Comment.User.Login
+	}
+
+	// PR number: try pull_request.number, then issue.number, then top-level number
+	if raw.PullRequest.Number > 0 {
+		ed.PRNumber = raw.PullRequest.Number
+	} else if raw.Issue.Number > 0 {
+		ed.PRNumber = raw.Issue.Number
+	} else {
+		ed.PRNumber = raw.Number
+	}
+
+	return ed
 }

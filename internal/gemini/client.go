@@ -50,6 +50,10 @@ func (c *Client) Generate(systemPrompt, userPrompt string) (string, error) {
 			return "", fmt.Errorf("no API key available: %w", err)
 		}
 
+		if attempt > 0 {
+			fmt.Printf("      🔄 Retry %d/%d (key: ...%s)\n", attempt, c.maxRetries, safeKeySuffix(key))
+		}
+
 		text, err := c.doRequest(key, systemPrompt, userPrompt)
 		if err == nil {
 			c.pool.Release(key)
@@ -57,12 +61,21 @@ func (c *Client) Generate(systemPrompt, userPrompt string) (string, error) {
 		}
 
 		if isRateLimited(err) {
+			fmt.Printf("      ⚠️  429 Rate Limited (key: ...%s), marking cooldown\n", safeKeySuffix(key))
 			c.pool.MarkCooldown(key)
 			continue
 		}
+		fmt.Printf("      ❌ API Error: %v\n", err)
 		return "", err
 	}
 	return "", fmt.Errorf("all %d retries exhausted due to rate limiting", c.maxRetries)
+}
+
+func safeKeySuffix(key string) string {
+	if len(key) <= 4 {
+		return key
+	}
+	return key[len(key)-4:]
 }
 
 func (c *Client) doRequest(apiKey, systemPrompt, userPrompt string) (string, error) {

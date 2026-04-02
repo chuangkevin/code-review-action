@@ -160,29 +160,28 @@ func RunReply(cfg *config.Config) (*Result, error) {
 
 // findOriginalAIComment tries to find which AI review comment the developer is replying to.
 func findOriginalAIComment(replyCommentID int, replyBody string, reviewComments []gitea.ReviewCommentDetail, issueComments []gitea.IssueComment) string {
-	// Strategy 1: Look at issue comments, find the AI comment right before this reply
+	// Strategy 1: Find the issue comment matching the reply, then look at context
+	// In Gitea, review thread replies appear as issue comments.
+	// The reply might reference the original review comment by being in the same thread.
 	for i, c := range issueComments {
-		if c.ID == replyCommentID && i > 0 {
-			prev := issueComments[i-1]
-			// Check if the previous comment looks like an AI review comment
-			if isAIComment(prev.Body) {
-				return prev.Body
+		if c.ID == replyCommentID {
+			// Look backwards for the nearest AI comment
+			for j := i - 1; j >= 0; j-- {
+				if isAIComment(issueComments[j].Body) {
+					return issueComments[j].Body
+				}
 			}
 		}
 	}
 
-	// Strategy 2: Check review inline comments for matching content
-	// If the reply quotes or references an inline comment
+	// Strategy 2: Check review inline comments — find one that seems related
 	for _, rc := range reviewComments {
-		if isAIComment(rc.Body) {
-			// Check if the reply seems related (contains file path or key words from the comment)
-			if seemsRelated(replyBody, rc.Body) {
-				return rc.Body
-			}
+		if isAIComment(rc.Body) && seemsRelated(replyBody, rc.Body) {
+			return rc.Body
 		}
 	}
 
-	// Strategy 3: If there's only one unresolved AI comment, assume it's that one
+	// Strategy 3: If there's only one unresolved AI review comment, assume it's that one
 	var unresolvedComments []string
 	for _, rc := range reviewComments {
 		if isAIComment(rc.Body) && rc.Resolver == nil {
@@ -191,6 +190,14 @@ func findOriginalAIComment(replyCommentID int, replyBody string, reviewComments 
 	}
 	if len(unresolvedComments) == 1 {
 		return unresolvedComments[0]
+	}
+
+	// Strategy 4: If reply doesn't match any specific comment but there are AI comments,
+	// pick the most recent one (last in list)
+	for i := len(reviewComments) - 1; i >= 0; i-- {
+		if isAIComment(reviewComments[i].Body) {
+			return reviewComments[i].Body
+		}
 	}
 
 	return ""

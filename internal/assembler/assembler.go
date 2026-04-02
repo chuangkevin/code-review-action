@@ -124,14 +124,10 @@ func (m *mergeEntry) buildBody() string {
 	return sb.String()
 }
 
-func BuildSummaryComment(output *AssemblyOutput, pr reviewer.PRContext, prNumber, fileCount, additions, deletions int) string {
+func BuildSummaryComment(output *AssemblyOutput, pr reviewer.PRContext, prNumber, fileCount, additions, deletions int, fileLinkBase string) string {
 	var sb strings.Builder
 
 	sb.WriteString("## 🤖 Code Review — Team Discussion\n\n")
-	sb.WriteString(fmt.Sprintf("**PR**: #%d %s\n", prNumber, pr.Title))
-	sb.WriteString(fmt.Sprintf("**Author**: %s · **Branch**: %s\n", pr.Author, pr.Branch))
-	sb.WriteString(fmt.Sprintf("**Files**: %d changed · +%d -%d\n", fileCount, additions, deletions))
-	sb.WriteString("\n---\n\n")
 
 	roleOrder := []string{"architecture", "backend", "security", "business", "frontend"}
 	for _, role := range roleOrder {
@@ -144,6 +140,30 @@ func BuildSummaryComment(output *AssemblyOutput, pr reviewer.PRContext, prNumber
 
 	if len(output.FailedRoles) > 0 {
 		sb.WriteString(fmt.Sprintf("⚠️ 以下角色 review 未完成: %s\n\n", strings.Join(output.FailedRoles, ", ")))
+	}
+
+	// Issue summary with file links
+	if len(output.InlineComments) > 0 {
+		sb.WriteString("---\n\n")
+		sb.WriteString("### 📋 發現的問題\n\n")
+		for _, c := range output.InlineComments {
+			severityIcon := "🔵"
+			switch c.Severity {
+			case "critical":
+				severityIcon = "🔴"
+			case "warning":
+				severityIcon = "🟡"
+			}
+			fileLink := fmt.Sprintf("[`%s:%d`](%s/%s#L%d)", c.File, c.Line, fileLinkBase, c.File, c.Line)
+			// Get first line of body as brief
+			brief := strings.SplitN(c.Body, "\n", 2)[0]
+			// Remove role prefix if present (emoji + bold name)
+			if idx := strings.Index(brief, "\n"); idx > 0 {
+				brief = brief[idx+1:]
+			}
+			sb.WriteString(fmt.Sprintf("- %s %s — %s\n", severityIcon, fileLink, brief))
+		}
+		sb.WriteString("\n")
 	}
 
 	sb.WriteString("---\n\n")

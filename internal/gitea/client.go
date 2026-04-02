@@ -41,6 +41,19 @@ type ReviewComment struct {
 	NewPos int    `json:"new_position,omitempty"`
 }
 
+// CreateReviewRequest is the payload for creating a PR review with inline comments.
+type CreateReviewRequest struct {
+	Body     string              `json:"body"`
+	Event    string              `json:"event"`
+	Comments []ReviewLineComment `json:"comments,omitempty"`
+}
+
+type ReviewLineComment struct {
+	Path        string `json:"path"`
+	NewPosition int    `json:"new_position"`
+	Body        string `json:"body"`
+}
+
 func NewClient(baseURL, token string) *Client {
 	return &Client{
 		baseURL:    baseURL,
@@ -104,10 +117,11 @@ func (c *Client) GetPRDiff(owner, repo string, prNumber int) (string, error) {
 	return string(body), nil
 }
 
-func (c *Client) PostReviewComment(owner, repo string, prNumber int, comment ReviewComment) error {
+// SubmitReview creates a PR review with summary body + inline comments in one API call.
+func (c *Client) SubmitReview(owner, repo string, prNumber int, review CreateReviewRequest) error {
 	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d/reviews", c.baseURL, owner, repo, prNumber)
 
-	body, _ := json.Marshal(comment)
+	body, _ := json.Marshal(review)
 	req, err := http.NewRequest("POST", url, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -117,17 +131,18 @@ func (c *Client) PostReviewComment(owner, repo string, prNumber int, comment Rev
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("post review comment: %w", err)
+		return fmt.Errorf("submit review: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("post review comment (status %d): %s", resp.StatusCode, respBody)
+		return fmt.Errorf("submit review (status %d): %s", resp.StatusCode, respBody)
 	}
 	return nil
 }
 
+// PostComment posts a general issue comment (kept as fallback).
 func (c *Client) PostComment(owner, repo string, prNumber int, body string) error {
 	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/%d/comments", c.baseURL, owner, repo, prNumber)
 

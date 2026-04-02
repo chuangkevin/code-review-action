@@ -9,11 +9,8 @@ import (
 
 func TestGetPRDiff(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/repos/owner/repo/pulls/1" {
+		if r.URL.Path != "/api/v1/repos/owner/repo/pulls/1.diff" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		if r.Header.Get("Accept") != "text/plain" {
-			t.Errorf("expected Accept: text/plain, got %s", r.Header.Get("Accept"))
 		}
 		w.Write([]byte("diff --git a/file.go b/file.go\n+new line"))
 	}))
@@ -53,26 +50,34 @@ func TestGetPRInfo(t *testing.T) {
 	}
 }
 
-func TestPostReviewComment(t *testing.T) {
-	var received ReviewComment
+func TestSubmitReview(t *testing.T) {
+	var received CreateReviewRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		json.NewDecoder(r.Body).Decode(&received)
-		w.WriteHeader(http.StatusCreated)
+		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{}`))
 	}))
 	defer server.Close()
 
 	client := NewClient(server.URL, "test-token")
-	err := client.PostReviewComment("owner", "repo", 1, ReviewComment{
-		Body:   "test comment",
-		Path:   "file.go",
-		NewPos: 42,
+	err := client.SubmitReview("owner", "repo", 1, CreateReviewRequest{
+		Body:  "summary",
+		Event: "COMMENT",
+		Comments: []ReviewLineComment{
+			{Path: "file.go", NewPosition: 42, Body: "inline comment"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if received.Body != "test comment" {
-		t.Errorf("body = %q, want %q", received.Body, "test comment")
+	if received.Body != "summary" {
+		t.Errorf("body = %q, want %q", received.Body, "summary")
+	}
+	if len(received.Comments) != 1 {
+		t.Fatalf("comments len = %d, want 1", len(received.Comments))
+	}
+	if received.Comments[0].Path != "file.go" {
+		t.Errorf("comment path = %q, want file.go", received.Comments[0].Path)
 	}
 }
 

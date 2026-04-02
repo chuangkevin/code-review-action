@@ -221,16 +221,48 @@ func Run(cfg *config.Config) (*Result, error) {
 		fmt.Printf("   ⚠️  失敗的 reviewer: %v\n", output.FailedRoles)
 	}
 
-	// 9. Post to Gitea — only summary discussion comment
+	// 9. Post to Gitea as a proper PR Review (summary + inline comments)
 	fmt.Println()
 	fmt.Println("📤 發送 Review 到 Gitea...")
-	fmt.Println("   📝 發送總結 comment...")
+
+	// Build file link base URL
+	fileLinkBase := fmt.Sprintf("%s/%s/%s/src/branch/%s",
+		cfg.GiteaURL, cfg.RepoOwner, cfg.RepoName, prCtx.Branch)
+
+	// Build inline comments for review
+	var reviewComments []gitea.ReviewLineComment
+	for _, c := range output.InlineComments {
+		fileLink := fmt.Sprintf("[`%s:%d`](%s/%s#L%d)", c.File, c.Line, fileLinkBase, c.File, c.Line)
+		body := fmt.Sprintf("**[%s]** %s\n\n%s", c.Severity, fileLink, c.Body)
+		reviewComments = append(reviewComments, gitea.ReviewLineComment{
+			Path:        c.File,
+			NewPosition: c.Line,
+			Body:        body,
+		})
+		fmt.Printf("   💬 [%s] %s:%d\n", c.Severity, c.File, c.Line)
+	}
+
+	// Build summary with file links
 	summary := assembler.BuildSummaryComment(output, prCtx, cfg.PRNumber,
-		prInfo.ChangedFiles, prInfo.Additions, prInfo.Deletions)
-	if err := giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, summary); err != nil {
-		fmt.Printf("   ⚠️  總結發送失敗: %v\n", err)
+		prInfo.ChangedFiles, prInfo.Additions, prInfo.Deletions, fileLinkBase)
+
+	fmt.Printf("   📝 提交 Review (%d inline comments + summary)...\n", len(reviewComments))
+	review := gitea.CreateReviewRequest{
+		Body:     summary,
+		Event:    "COMMENT",
+		Comments: reviewComments,
+	}
+	if err := giteaClient.SubmitReview(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, review); err != nil {
+		fmt.Printf("   ⚠️  Review 提交失敗: %v\n", err)
+		// Fallback: post as regular comment
+		fmt.Println("   🔄 Fallback: 改用一般 comment...")
+		if err := giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, summary); err != nil {
+			fmt.Printf("   ⚠️  Fallback 也失敗: %v\n", err)
+		} else {
+			fmt.Println("   ✅ Fallback comment 已發送")
+		}
 	} else {
-		fmt.Println("   ✅ 總結已發送")
+		fmt.Println("   ✅ Review 已提交")
 	}
 
 	// 10. Slack notification

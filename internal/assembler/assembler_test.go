@@ -86,9 +86,9 @@ func TestBuildSummaryComment(t *testing.T) {
 		Branch: "feature/test",
 	}
 
-	markdown := BuildSummaryComment(output, pr, 42, 5, 10, 3)
-	if !strings.Contains(markdown, "Test PR") {
-		t.Error("summary should contain PR title")
+	markdown := BuildSummaryComment(output, pr, 42, 5, 10, 3, "https://gitea.example.com/owner/repo/src/branch/main")
+	if !strings.Contains(markdown, "Team Discussion") {
+		t.Error("summary should contain Team Discussion header")
 	}
 	if !strings.Contains(markdown, "frontend") {
 		t.Error("summary should mention failed role")

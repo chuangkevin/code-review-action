@@ -90,10 +90,6 @@ func Load() (*Config, error) {
 	// PR number from event JSON
 	cfg.PRNumber = loadPRNumberFromEvent()
 
-	if cfg.PRNumber == 0 {
-		return nil, fmt.Errorf("could not determine PR number (check GITHUB_EVENT_PATH)")
-	}
-
 	return cfg, nil
 }
 

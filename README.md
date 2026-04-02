@@ -42,6 +42,8 @@ name: AI Code Review
 on:
   pull_request:
     types: [opened, synchronize]
+  issue_comment:
+    types: [created]
 
 jobs:
   review:
@@ -89,6 +91,13 @@ jobs:
 - **可點擊連結** — Summary 中每個問題都有 file:line 連結
 - **稱呼全名** — 使用 Gitea 使用者的 full_name 而非 login ID
 - **Slack 通知** — 可設定每次通知或只在有問題時通知
+- **對話式 Review** — 開發者回覆 review comment 後，AI 自動評估回覆是否合理，由原始 reviewer 角色回應
+- **跨 Domain 介入** — 開發者的回覆涉及其他領域時，對應的 reviewer 會自動補充意見
+- **REQUEST_CHANGES / APPROVE** — 有 critical 問題時擋 PR merge，全部解決後自動 approve
+
+## 已知限制
+
+- **Reply 不在 thread 內** — Gitea 1.25 API 不支援 reply 到 review comment thread，AI 的回覆會以引用格式出現在 Conversation tab。待 Gitea 升級後改進
 
 ## Outputs
 

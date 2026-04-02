@@ -225,9 +225,9 @@ func Run(cfg *config.Config) (*Result, error) {
 	fmt.Println()
 	fmt.Println("📤 發送 Review 到 Gitea...")
 
-	// Build file link base URL
+	// Build file link base URL (use public URL for clickable links)
 	fileLinkBase := fmt.Sprintf("%s/%s/%s/src/branch/%s",
-		cfg.GiteaURL, cfg.RepoOwner, cfg.RepoName, prCtx.Branch)
+		cfg.GiteaPublicURL, cfg.RepoOwner, cfg.RepoName, prCtx.Branch)
 
 	// Build inline comments for review
 	var reviewComments []gitea.ReviewLineComment

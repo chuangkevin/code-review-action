@@ -90,10 +90,6 @@ func Load() (*Config, error) {
 	// PR number from event JSON
 	cfg.PRNumber = loadPRNumberFromEvent()
 
-	// Debug: print config context
-	fmt.Printf("🔧 Config: URL=%s, Repo=%s/%s, PR=#%d, Model=%s\n",
-		cfg.GiteaURL, cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, cfg.GeminiModel)
-
 	if cfg.PRNumber == 0 {
 		return nil, fmt.Errorf("could not determine PR number (check GITHUB_EVENT_PATH)")
 	}

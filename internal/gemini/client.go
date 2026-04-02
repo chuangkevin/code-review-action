@@ -35,7 +35,7 @@ func NewClient(pool *KeyPool, model string, opts ...ClientOption) *Client {
 		model:      model,
 		baseURL:    defaultBaseURL,
 		maxRetries: 10,
-		httpClient: &http.Client{Timeout: 120 * time.Second},
+		httpClient: &http.Client{Timeout: 60 * time.Second},
 	}
 	for _, opt := range opts {
 		opt(c)

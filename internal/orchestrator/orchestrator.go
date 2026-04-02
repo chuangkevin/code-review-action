@@ -45,6 +45,7 @@ func Run(cfg *config.Config) (*Result, error) {
 	fmt.Printf("   👤 Author: %s | Branch: %s → %s\n", prInfo.User.Login, prInfo.Head.Ref, prInfo.Base.Ref)
 	fmt.Printf("   📊 %d files changed, +%d -%d\n", prInfo.ChangedFiles, prInfo.Additions, prInfo.Deletions)
 
+	fmt.Println("   📥 取得 diff...")
 	diff, err := giteaClient.GetPRDiff(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber)
 	if err != nil {
 		return nil, fmt.Errorf("get PR diff: %w", err)

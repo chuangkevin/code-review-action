@@ -77,20 +77,25 @@ func (c *Client) GetPRInfo(owner, repo string, prNumber int) (*PRInfo, error) {
 }
 
 func (c *Client) GetPRDiff(owner, repo string, prNumber int) (string, error) {
-	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d", c.baseURL, owner, repo, prNumber)
+	// Gitea: use .diff endpoint for unified diff format
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d.diff", c.baseURL, owner, repo, prNumber)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return "", err
 	}
 	c.setHeaders(req)
-	req.Header.Set("Accept", "text/plain")
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("get PR diff: %w", err)
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("get PR diff (status %d): %s", resp.StatusCode, body)
+	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {

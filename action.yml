@@ -46,6 +46,9 @@ inputs:
     description: "Max retries on 429"
     required: false
     default: "10"
+  gitea_public_url:
+    description: "Public Gitea URL for links in comments (defaults to internal GITHUB_SERVER_URL)"
+    required: false
 
 runs:
   using: "docker"

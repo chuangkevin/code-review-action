@@ -22,10 +22,11 @@ type Config struct {
 	ReviewRoles      []string
 	CooldownDuration int
 	MaxRetries       int
-	GiteaURL    string
-	RepoOwner   string
-	RepoName    string
-	PRNumber    int
+	GiteaURL       string // internal URL for API calls (from GITHUB_SERVER_URL)
+	GiteaPublicURL string // external URL for links in comments
+	RepoOwner      string
+	RepoName       string
+	PRNumber       int
 }
 
 func (c *Config) CooldownDurationTime() time.Duration {
@@ -69,6 +70,12 @@ func Load() (*Config, error) {
 	cfg.GiteaURL = os.Getenv("GITHUB_SERVER_URL")
 	if cfg.GiteaURL == "" {
 		cfg.GiteaURL = os.Getenv("GITEA_SERVER_URL")
+	}
+
+	// Public URL for links in comments (defaults to GiteaURL if not set)
+	cfg.GiteaPublicURL = getInput("GITEA_PUBLIC_URL")
+	if cfg.GiteaPublicURL == "" {
+		cfg.GiteaPublicURL = cfg.GiteaURL
 	}
 
 	// GITHUB_REPOSITORY = "owner/repo"

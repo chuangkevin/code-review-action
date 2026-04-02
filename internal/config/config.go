@@ -166,6 +166,13 @@ func loadEvent() eventData {
 		return eventData{}
 	}
 
+	// Debug: print first 500 chars of event JSON to understand structure
+	preview := string(data)
+	if len(preview) > 500 {
+		preview = preview[:500]
+	}
+	fmt.Printf("📋 Event JSON preview:\n%s\n---\n", preview)
+
 	var raw struct {
 		Number      int `json:"number"`
 		PullRequest struct {

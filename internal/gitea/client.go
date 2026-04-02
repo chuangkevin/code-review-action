@@ -306,6 +306,31 @@ type IssueComment struct {
 	User PRUser `json:"user"`
 }
 
+// ReplyToReviewComment posts a reply in the review comment thread.
+func (c *Client) ReplyToReviewComment(owner, repo string, prNumber, reviewID int, body string) error {
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d/reviews/%d/comments", c.baseURL, owner, repo, prNumber, reviewID)
+
+	payload, _ := json.Marshal(map[string]string{"body": body})
+	req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("reply to review comment: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("reply to review comment (status %d): %s", resp.StatusCode, respBody)
+	}
+	return nil
+}
+
 // ResolveComment marks a review comment as resolved.
 func (c *Client) ResolveComment(owner, repo string, prNumber int, commentID int) error {
 	// Gitea API: POST /repos/{owner}/{repo}/issues/comments/{id}

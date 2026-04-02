@@ -97,10 +97,16 @@ func RunReply(cfg *config.Config) (*Result, error) {
 	}
 
 	replyBody := formatReplyComment(evalResult, originalRole)
-	if err := giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody); err != nil {
-		fmt.Printf("   ⚠️  回覆發送失敗: %v\n", err)
+	// Reply in the review thread, not as a standalone comment
+	if err := giteaClient.ReplyToReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, aiReview.ID, replyBody); err != nil {
+		fmt.Printf("   ⚠️  Review thread 回覆失敗: %v, fallback 到一般 comment\n", err)
+		if err := giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody); err != nil {
+			fmt.Printf("   ⚠️  Fallback 也失敗: %v\n", err)
+		} else {
+			fmt.Println("   ✅ 回覆已發送（一般 comment）")
+		}
 	} else {
-		fmt.Println("   ✅ 回覆已發送")
+		fmt.Println("   ✅ 回覆已發送到 review thread")
 	}
 
 	// 7.5. If resolved, try to resolve the comment thread
@@ -123,7 +129,7 @@ func RunReply(cfg *config.Config) (*Result, error) {
 			continue
 		}
 		crossBody := formatReplyComment(crossResult, crossRole)
-		if err := giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, crossBody); err != nil {
+		if err := giteaClient.ReplyToReviewComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, aiReview.ID, crossBody); err != nil {
 			fmt.Printf("   ⚠️  %s 回覆發送失敗: %v\n", reviewer.RoleDisplayName(crossRole), err)
 		} else {
 			fmt.Printf("   ✅ %s 已補充意見\n", reviewer.RoleDisplayName(crossRole))

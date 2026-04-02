@@ -246,10 +246,20 @@ func Run(cfg *config.Config) (*Result, error) {
 	summary := assembler.BuildSummaryComment(output, prCtx, cfg.PRNumber,
 		prInfo.ChangedFiles, prInfo.Additions, prInfo.Deletions, fileLinkBase)
 
+	// Determine review event type based on severity
+	reviewEvent := "COMMENT"
+	if critical > 0 {
+		reviewEvent = "REQUEST_CHANGES"
+		fmt.Println("   🚫 有 critical 問題 → REQUEST_CHANGES")
+	} else if critical == 0 && warning == 0 && suggestion == 0 {
+		reviewEvent = "APPROVED"
+		fmt.Println("   ✅ 沒有問題 → APPROVE")
+	}
+
 	fmt.Printf("   📝 提交 Review (%d inline comments + summary)...\n", len(reviewComments))
 	review := gitea.CreateReviewRequest{
 		Body:     summary,
-		Event:    "COMMENT",
+		Event:    reviewEvent,
 		Comments: reviewComments,
 	}
 	if err := giteaClient.SubmitReview(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, review); err != nil {

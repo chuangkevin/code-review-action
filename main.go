@@ -15,9 +15,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	result, err := orchestrator.Run(cfg)
+	var result *orchestrator.Result
+
+	switch cfg.EventName {
+	case "issue_comment":
+		// Developer replied to a review comment → evaluate the reply
+		fmt.Println("📨 Event: issue_comment — 評估開發者回覆")
+		result, err = orchestrator.RunReply(cfg)
+	default:
+		// pull_request event → full code review
+		fmt.Println("📨 Event: pull_request — 執行完整 code review")
+		result, err = orchestrator.Run(cfg)
+	}
+
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "review failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "failed: %v\n", err)
 		os.Exit(1)
 	}
 

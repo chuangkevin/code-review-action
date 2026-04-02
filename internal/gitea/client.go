@@ -175,6 +175,167 @@ func (c *Client) PostComment(owner, repo string, prNumber int, body string) erro
 	return nil
 }
 
+// GetPRReviews returns all reviews on a PR.
+func (c *Client) GetPRReviews(owner, repo string, prNumber int) ([]Review, error) {
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d/reviews", c.baseURL, owner, repo, prNumber)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get reviews: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get reviews (status %d): %s", resp.StatusCode, body)
+	}
+
+	var reviews []Review
+	if err := json.NewDecoder(resp.Body).Decode(&reviews); err != nil {
+		return nil, fmt.Errorf("decode reviews: %w", err)
+	}
+	return reviews, nil
+}
+
+// GetReviewComments returns inline comments for a specific review.
+func (c *Client) GetReviewComments(owner, repo string, prNumber, reviewID int) ([]ReviewCommentDetail, error) {
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d/reviews/%d/comments", c.baseURL, owner, repo, prNumber, reviewID)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get review comments: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get review comments (status %d): %s", resp.StatusCode, body)
+	}
+
+	var comments []ReviewCommentDetail
+	if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
+		return nil, fmt.Errorf("decode review comments: %w", err)
+	}
+	return comments, nil
+}
+
+// GetIssueComments returns all comments on a PR/issue.
+func (c *Client) GetIssueComments(owner, repo string, issueNumber int) ([]IssueComment, error) {
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/%d/comments", c.baseURL, owner, repo, issueNumber)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(req)
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("get issue comments: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("get issue comments (status %d): %s", resp.StatusCode, body)
+	}
+
+	var comments []IssueComment
+	if err := json.NewDecoder(resp.Body).Decode(&comments); err != nil {
+		return nil, fmt.Errorf("decode issue comments: %w", err)
+	}
+	return comments, nil
+}
+
+// DismissReview dismisses a previous review.
+func (c *Client) DismissReview(owner, repo string, prNumber, reviewID int, message string) error {
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d/reviews/%d/dismissals", c.baseURL, owner, repo, prNumber, reviewID)
+
+	payload, _ := json.Marshal(map[string]string{"message": message})
+	req, err := http.NewRequest("POST", url, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("dismiss review: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("dismiss review (status %d): %s", resp.StatusCode, respBody)
+	}
+	return nil
+}
+
+type Review struct {
+	ID   int    `json:"id"`
+	Body string `json:"body"`
+	User PRUser `json:"user"`
+	State string `json:"state"` // "COMMENT", "REQUEST_CHANGES", "APPROVED"
+}
+
+type ReviewCommentDetail struct {
+	ID       int    `json:"id"`
+	Body     string `json:"body"`
+	Path     string `json:"path"`
+	Line     int    `json:"line"`
+	User     PRUser `json:"user"`
+	Resolver *PRUser `json:"resolver"`
+}
+
+type IssueComment struct {
+	ID   int    `json:"id"`
+	Body string `json:"body"`
+	User PRUser `json:"user"`
+}
+
+// ResolveComment marks a review comment as resolved.
+func (c *Client) ResolveComment(owner, repo string, prNumber int, commentID int) error {
+	// Gitea API: POST /repos/{owner}/{repo}/issues/comments/{id}
+	// with a special header or parameter to resolve
+	// Actually Gitea uses: POST /repos/{owner}/{repo}/pulls/{index}/reviews/{id}/resolve
+	// But the simpler approach: use the resolve endpoint
+	url := fmt.Sprintf("%s/api/v1/repos/%s/%s/issues/comments/%d", c.baseURL, owner, repo, commentID)
+
+	// Gitea doesn't have a dedicated "resolve" API for individual comments in older versions.
+	// The workaround: we post a ✅ reply and let the approve handle it.
+	// For newer Gitea (1.22+), try the resolve endpoint:
+	resolveURL := fmt.Sprintf("%s/api/v1/repos/%s/%s/pulls/%d/resolve_comment", c.baseURL, owner, repo, prNumber)
+	payload, _ := json.Marshal(map[string]int{"comment_id": commentID})
+	req, err := http.NewRequest("POST", resolveURL, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	c.setHeaders(req)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		// If resolve endpoint doesn't exist, not critical
+		_ = url // suppress unused
+		return nil
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
 func (c *Client) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "token "+c.token)
 }

@@ -98,20 +98,16 @@ func RunReply(cfg *config.Config) (*Result, error) {
 		fmt.Printf("   💬 需要進一步討論 — %s\n", evalResult.Reply)
 	}
 
-	// 6. Post reply as a new review with inline comment on the same file:line
-	replyBody := formatReplyComment(evalResult, originalRole)
+	// 6. Post reply as a quoted comment (Gitea 1.25 doesn't support thread reply API)
+	fileLinkBase := fmt.Sprintf("%s/%s/%s/src/branch/main",
+		cfg.GiteaPublicURL, cfg.RepoOwner, cfg.RepoName)
+	replyBody := formatQuotedReply(evalResult, originalRole, match, cfg.CommentUser, cfg.CommentBody, fileLinkBase)
 
-	if match.File != "" && match.Line > 0 {
-		fmt.Printf("   📎 發送 review comment 到 %s:%d\n", match.File, match.Line)
-		if err := giteaClient.ReplyAsReview(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, match.File, match.Line, replyBody); err != nil {
-			fmt.Printf("   ⚠️  Review reply 失敗: %v, fallback 到一般 comment\n", err)
-			giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody)
-		} else {
-			fmt.Println("   ✅ 回覆已發送到 Files Changed")
-		}
+	fmt.Println("   📎 發送引用回覆 comment...")
+	if err := giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody); err != nil {
+		fmt.Printf("   ⚠️  回覆發送失敗: %v\n", err)
 	} else {
-		fmt.Println("   📎 無 file:line 資訊，發送為一般 comment")
-		giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, replyBody)
+		fmt.Println("   ✅ 回覆已發送")
 	}
 
 	// 7. Cross-domain check
@@ -125,14 +121,8 @@ func RunReply(cfg *config.Config) (*Result, error) {
 			fmt.Printf("   ⚠️  %s 回覆失敗: %v\n", reviewer.RoleDisplayName(crossRole), err)
 			continue
 		}
-		crossBody := formatReplyComment(crossResult, crossRole)
-		if match.File != "" && match.Line > 0 {
-			if err := giteaClient.ReplyAsReview(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, match.File, match.Line, crossBody); err != nil {
-				giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, crossBody)
-			}
-		} else {
-			giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, crossBody)
-		}
+		crossBody := formatQuotedReply(crossResult, crossRole, match, cfg.CommentUser, cfg.CommentBody, fileLinkBase)
+		giteaClient.PostComment(cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, crossBody)
 		fmt.Printf("   ✅ %s 已補充意見\n", reviewer.RoleDisplayName(crossRole))
 	}
 
@@ -250,6 +240,36 @@ func formatReplyComment(result *reviewer.ConversationResult, role string) string
 		return fmt.Sprintf("%s **%s** · %s\n\n✅ %s", emoji, name, title, result.Reply)
 	}
 	return fmt.Sprintf("%s **%s** · %s\n\n💬 %s", emoji, name, title, result.Reply)
+}
+
+func formatQuotedReply(result *reviewer.ConversationResult, role string, match commentMatch, userName, userReply, fileLinkBase string) string {
+	emoji := reviewer.RoleEmoji(role)
+	name := reviewer.RoleDisplayName(role)
+	title := reviewer.RoleTitle(role)
+
+	var sb strings.Builder
+
+	// Quote: who replied to what
+	fileRef := ""
+	if match.File != "" && match.Line > 0 {
+		fileRef = fmt.Sprintf("[`%s:%d`](%s/%s#L%d)", match.File, match.Line, fileLinkBase, match.File, match.Line)
+	}
+	sb.WriteString(fmt.Sprintf("> 💬 **%s** 回覆了 **%s** 在 %s 的 comment:\n", userName, name, fileRef))
+	// Quote the user's reply (indent each line)
+	for _, line := range strings.Split(userReply, "\n") {
+		sb.WriteString(fmt.Sprintf("> %s\n", strings.TrimSpace(line)))
+	}
+	sb.WriteString("\n")
+
+	// The reviewer's response
+	sb.WriteString(fmt.Sprintf("%s **%s** · %s\n\n", emoji, name, title))
+	if result.Resolved {
+		sb.WriteString(fmt.Sprintf("✅ %s", result.Reply))
+	} else {
+		sb.WriteString(fmt.Sprintf("💬 %s", result.Reply))
+	}
+
+	return sb.String()
 }
 
 func detectCrossDomain(client *gemini.Client, originalComment, developerReply, originalRole string) []string {

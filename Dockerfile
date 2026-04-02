@@ -3,6 +3,7 @@ WORKDIR /app
 COPY go.mod ./
 RUN go mod download
 COPY . .
+ARG CACHE_BUST=1
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" -o /review-action .
 
 FROM alpine:3.19

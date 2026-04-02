@@ -108,6 +108,21 @@ func Load() (*Config, error) {
 	cfg.CommentBody = event.CommentBody
 	cfg.CommentUser = event.CommentUser
 
+	if cfg.PRNumber == 0 {
+		// Debug: dump event JSON when PR number is 0
+		eventPath := os.Getenv("GITHUB_EVENT_PATH")
+		if eventPath != "" {
+			data, err := os.ReadFile(eventPath)
+			if err == nil {
+				preview := string(data)
+				if len(preview) > 1000 {
+					preview = preview[:1000]
+				}
+				fmt.Printf("⚠️  PR number = 0, event JSON dump:\n%s\n", preview)
+			}
+		}
+	}
+
 	return cfg, nil
 }
 
@@ -166,12 +181,6 @@ func loadEvent() eventData {
 		return eventData{}
 	}
 
-	// Debug: print first 500 chars of event JSON to understand structure
-	preview := string(data)
-	if len(preview) > 500 {
-		preview = preview[:500]
-	}
-	fmt.Printf("📋 Event JSON preview:\n%s\n---\n", preview)
 
 	var raw struct {
 		Number      int `json:"number"`

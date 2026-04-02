@@ -18,6 +18,12 @@ func main() {
 
 	var result *orchestrator.Result
 
+	// Skip if no PR number (e.g., push to main triggered the workflow)
+	if cfg.PRNumber == 0 {
+		fmt.Println("⏭️  No PR number found, skipping (probably a push to main)")
+		os.Exit(0)
+	}
+
 	switch cfg.EventName {
 	case "issue_comment":
 		// Skip if comment is from the bot itself (prevent infinite loop)

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -64,16 +65,37 @@ func Load() (*Config, error) {
 		MaxRetries:       getInputIntDefault("MAX_RETRIES", 10),
 	}
 
-	cfg.GiteaURL = os.Getenv("GITEA_SERVER_URL")
-	cfg.RepoOwner = os.Getenv("GITEA_REPO_OWNER")
-	cfg.RepoName = os.Getenv("GITEA_REPO_NAME")
+	// Gitea Actions uses GITHUB_* env vars for compatibility
+	cfg.GiteaURL = os.Getenv("GITHUB_SERVER_URL")
+	if cfg.GiteaURL == "" {
+		cfg.GiteaURL = os.Getenv("GITEA_SERVER_URL")
+	}
 
-	prStr := os.Getenv("GITEA_PR_NUMBER")
-	if prStr != "" {
-		pr, err := strconv.Atoi(prStr)
-		if err == nil {
-			cfg.PRNumber = pr
+	// GITHUB_REPOSITORY = "owner/repo"
+	fullRepo := os.Getenv("GITHUB_REPOSITORY")
+	if fullRepo != "" {
+		parts := strings.SplitN(fullRepo, "/", 2)
+		if len(parts) == 2 {
+			cfg.RepoOwner = parts[0]
+			cfg.RepoName = parts[1]
 		}
+	}
+	if cfg.RepoOwner == "" {
+		cfg.RepoOwner = os.Getenv("GITEA_REPO_OWNER")
+	}
+	if cfg.RepoName == "" {
+		cfg.RepoName = os.Getenv("GITEA_REPO_NAME")
+	}
+
+	// PR number from event JSON
+	cfg.PRNumber = loadPRNumberFromEvent()
+
+	// Debug: print config context
+	fmt.Printf("🔧 Config: URL=%s, Repo=%s/%s, PR=#%d, Model=%s\n",
+		cfg.GiteaURL, cfg.RepoOwner, cfg.RepoName, cfg.PRNumber, cfg.GeminiModel)
+
+	if cfg.PRNumber == 0 {
+		return nil, fmt.Errorf("could not determine PR number (check GITHUB_EVENT_PATH)")
 	}
 
 	return cfg, nil
@@ -113,4 +135,35 @@ func splitAndTrim(s string) []string {
 		}
 	}
 	return result
+}
+
+// loadPRNumberFromEvent reads the PR number from the GitHub Actions event JSON.
+// Gitea Actions sets GITHUB_EVENT_PATH to a file containing the webhook payload.
+func loadPRNumberFromEvent() int {
+	eventPath := os.Getenv("GITHUB_EVENT_PATH")
+	if eventPath == "" {
+		return 0
+	}
+
+	data, err := os.ReadFile(eventPath)
+	if err != nil {
+		fmt.Printf("⚠️  無法讀取 event file: %v\n", err)
+		return 0
+	}
+
+	var event struct {
+		Number      int `json:"number"`
+		PullRequest struct {
+			Number int `json:"number"`
+		} `json:"pull_request"`
+	}
+	if err := json.Unmarshal(data, &event); err != nil {
+		fmt.Printf("⚠️  無法解析 event JSON: %v\n", err)
+		return 0
+	}
+
+	if event.PullRequest.Number > 0 {
+		return event.PullRequest.Number
+	}
+	return event.Number
 }

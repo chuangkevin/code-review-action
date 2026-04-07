@@ -20,7 +20,7 @@ Multi-role AI code review action，在 PR 建立/更新時自動觸發。使用 
 
 | Secret 名稱 | 必要 | 說明 |
 |---------------|------|------|
-| `REVIEW_TOKEN` | **必要** | Gitea API token，用於讀取 PR diff 和發表 review comment。到 **個人 Settings → Applications → Generate New Token** 建立。注意：不能用 `GITEA_` 或 `GITHUB_` 開頭（保留前綴） |
+| `REVIEW_TOKEN` | **必要** | Gitea API token，用於讀取 PR diff 和發表 review comment。優先使用 `secrets.GITEA_TOKEN` 若不行，則到 **個人 Settings → Applications → Generate New Token** 建立。注意：不能用 `GITEA_` 或 `GITHUB_` 開頭（保留前綴） |
 | `GEMINI_API_KEYS` | **必要** | Gemini API keys，多把用逗號分隔（例如 `key1,key2,key3`）。到 [Google AI Studio](https://aistudio.google.com/apikey) 取得 |
 | `SKILLS_REPO_TOKEN` | 選填 | 用來 clone Skills repo 的 Gitea token（如果 repo 是 private），只需 `repository` Read 權限 |
 | `SLACK_WEBHOOK_URL` | 選填 | Slack Incoming Webhook URL，用於發送 review 通知 |
@@ -52,7 +52,7 @@ jobs:
       - name: AI Code Review
         uses: https://gitea.housefun.com.tw/HP_TOOL/code-review-action@main
         with:
-          gitea_token: ${{ secrets.REVIEW_TOKEN }}
+          gitea_token: ${{ secrets.GITEA_TOKEN }}
           gemini_api_keys: ${{ secrets.GEMINI_API_KEYS }}
           gitea_public_url: https://gitea.housefun.com.tw
           skills_repo: http://srvhpgit:32000/HP/HPSkills.git

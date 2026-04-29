@@ -90,8 +90,9 @@ func (c *Client) doRequest(apiKey, systemPrompt, userPrompt string) (string, err
 			Parts: []Part{{Text: userPrompt}},
 		}},
 		GenerationConfig: &GenerationConfig{
-			Temperature:     0.2,
-			MaxOutputTokens: 8192,
+			Temperature:      0.2,
+			MaxOutputTokens:  8192,
+			ResponseMimeType: "application/json",
 		},
 	}
 
@@ -146,8 +147,9 @@ type Part struct {
 }
 
 type GenerationConfig struct {
-	Temperature     float64 `json:"temperature,omitempty"`
-	MaxOutputTokens int     `json:"maxOutputTokens,omitempty"`
+	Temperature      float64 `json:"temperature,omitempty"`
+	MaxOutputTokens  int     `json:"maxOutputTokens,omitempty"`
+	ResponseMimeType string  `json:"responseMimeType,omitempty"`
 }
 
 type GenerateResponse struct {

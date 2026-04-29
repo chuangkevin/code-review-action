@@ -79,6 +79,9 @@ func TestBuildSummaryComment(t *testing.T) {
 		},
 		FailedRoles: []string{"frontend"},
 		Skills:      []string{"business-member-doc"},
+		RoleSkills: map[string][]string{
+			"backend": {"business-member-doc"},
+		},
 	}
 	pr := reviewer.PRContext{
 		Title:  "Test PR",
@@ -95,5 +98,11 @@ func TestBuildSummaryComment(t *testing.T) {
 	}
 	if !strings.Contains(markdown, "business-member-doc") {
 		t.Error("summary should list skills used")
+	}
+	if !strings.Contains(markdown, "本次參考的 Domain Knowledge") {
+		t.Error("summary should label per-role skill block")
+	}
+	if !strings.Contains(markdown, "**Rex**") {
+		t.Error("per-role skill block should show Rex display name")
 	}
 }

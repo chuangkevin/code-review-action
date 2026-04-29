@@ -82,6 +82,7 @@ func Run(cfg *config.Config) (*Result, error) {
 	// 4. Skill matching
 	fmt.Println()
 	skillMap := make(map[string][]string)
+	roleSkillNames := make(map[string][]string)
 	var usedSkills []string
 	if cfg.SkillsRepo != "" {
 		fmt.Printf("📚 載入 Skills from %s...\n", cfg.SkillsRepo)
@@ -103,6 +104,7 @@ func Run(cfg *config.Config) (*Result, error) {
 							fmt.Printf("   🎯 %s → %v\n", role, skillNames)
 						}
 						var contents []string
+						var loadedNames []string
 						for _, name := range skillNames {
 							content, err := skills.LoadSkillContent(skillsDir, name)
 							if err != nil {
@@ -110,9 +112,11 @@ func Run(cfg *config.Config) (*Result, error) {
 								continue
 							}
 							contents = append(contents, content)
+							loadedNames = append(loadedNames, name)
 							usedSkills = append(usedSkills, name)
 						}
 						skillMap[role] = contents
+						roleSkillNames[role] = loadedNames
 					}
 				}
 			}
@@ -203,6 +207,7 @@ func Run(cfg *config.Config) (*Result, error) {
 	output := assembler.Assemble(validResults)
 	output.FailedRoles = failedRoles
 	output.Skills = dedupStrings(usedSkills)
+	output.RoleSkills = roleSkillNames
 
 	critical, warning, suggestion := 0, 0, 0
 	for _, c := range output.InlineComments {

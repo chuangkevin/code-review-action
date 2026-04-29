@@ -53,7 +53,7 @@ var roles = map[string]roleInfo{
 	},
 }
 
-const commonSuffix = "\n## 規則\n- 用中文撰寫，技術名詞保留英文（如 Thread、deadlock、race condition）\n- 用對話語氣，像在跟同事討論，不要像 AI 報告\n- 每個 comment 標註嚴重程度：critical（必須修）、warning（建議修）、suggestion（可以更好）\n- 只指出真正的問題，不要為了湊數量而挑毛病\n- 如果沒有發現問題，回傳空的 inline_comments 即可\n- 針對 diff 中實際變更的程式碼，不要 review 未修改的部分\n\n## 輸出格式（純 JSON，不要加 markdown 格式）\n{\n  \"inline_comments\": [\n    {\n      \"file\": \"path/to/file.go\",\n      \"line\": 42,\n      \"severity\": \"critical\",\n      \"body\": \"你的 review comment\"\n    }\n  ],\n  \"summary\": \"你的整體觀點摘要（2-3 句話，用第一人稱）\"\n}"
+const commonSuffix = "\n## 規則\n- 用中文撰寫，技術名詞保留英文（如 Thread、deadlock、race condition）\n- 用對話語氣，像在跟同事討論，不要像 AI 報告\n- 每個 comment 標註嚴重程度：critical（必須修）、warning（建議修）、suggestion（可以更好）\n- 只指出真正的問題，不要為了湊數量而挑毛病\n- 如果沒有發現問題，回傳空的 inline_comments 即可\n- 針對 diff 中實際變更的程式碼，不要 review 未修改的部分\n- summary 用第一人稱，**開頭直接稱呼 PR 作者的名字（取自 Author 欄位的中文姓名，如「哲愷」），不要在開頭加上你自己的角色名稱前綴（如「Arch:」「Rex:」）**\n- **inline comment 必須短**：每則聚焦單一問題，2-4 句話講完（< 100 字）。指出問題 + 一句具體修法即可。不要列 bullet 推薦清單、不要堆疊大量 class 名稱、不要重複 domain 說明。\n- 跨檔案或整體架構的觀察寫進 summary，不要塞到每個 inline comment 裡重複。\n- 目標：reviewer 讀完一則 inline comment 應該在 15 秒內理解問題並知道怎麼改。寫太長沒人看，這不是 PR review 的目的。\n\n## 輸出格式（純 JSON，不要加 markdown 格式）\n{\n  \"inline_comments\": [\n    {\n      \"file\": \"path/to/file.go\",\n      \"line\": 42,\n      \"severity\": \"critical\",\n      \"body\": \"你的 review comment\"\n    }\n  ],\n  \"summary\": \"你的整體觀點摘要（2-3 句話，用第一人稱）\"\n}"
 
 func GetSystemPrompt(role string) string {
 	info, ok := roles[role]
@@ -66,7 +66,7 @@ func GetSystemPrompt(role string) string {
 func BuildUserPrompt(diff string, skillContents []string, pr PRContext) string {
 	var sb strings.Builder
 
-	sb.WriteString(fmt.Sprintf("## PR 資訊\n- Title: %s\n- Author: %s\n- Branch: %s → %s\n",
+	sb.WriteString(fmt.Sprintf("## PR 資訊\n- Title: %s\n- Author: %s（請在 summary 開頭用此名字稱呼作者）\n- Branch: %s → %s\n",
 		pr.Title, pr.Author, pr.Branch, pr.BaseBranch))
 
 	if pr.Body != "" {

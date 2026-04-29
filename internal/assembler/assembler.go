@@ -19,6 +19,7 @@ type AssemblyOutput struct {
 	Summaries      map[string]string
 	FailedRoles    []string
 	Skills         []string
+	RoleSkills     map[string][]string
 }
 
 var severityRank = map[string]int{
@@ -130,6 +131,22 @@ func BuildSummaryComment(output *AssemblyOutput, pr reviewer.PRContext, prNumber
 	sb.WriteString("## 🤖 Code Review — Team Discussion\n\n")
 
 	roleOrder := []string{"architecture", "backend", "security", "business", "frontend"}
+
+	if hasAnyRoleSkills(output.RoleSkills, roleOrder) {
+		sb.WriteString("> 📚 **本次參考的 Domain Knowledge**\n>\n")
+		for _, role := range roleOrder {
+			names := output.RoleSkills[role]
+			if len(names) == 0 {
+				continue
+			}
+			sb.WriteString(fmt.Sprintf("> - %s **%s**: `%s`\n",
+				reviewer.RoleEmoji(role),
+				reviewer.RoleDisplayName(role),
+				strings.Join(names, "`, `")))
+		}
+		sb.WriteString("\n")
+	}
+
 	for _, role := range roleOrder {
 		summary, ok := output.Summaries[role]
 		if !ok {
@@ -183,9 +200,14 @@ func BuildSummaryComment(output *AssemblyOutput, pr reviewer.PRContext, prNumber
 	sb.WriteString("|:-----------:|:----------:|:-------------:|\n")
 	sb.WriteString(fmt.Sprintf("| %d | %d | %d |\n", critical, warning, suggestion))
 
-	if len(output.Skills) > 0 {
-		sb.WriteString(fmt.Sprintf("\n📚 使用的 Skills: %s\n", strings.Join(output.Skills, ", ")))
-	}
-
 	return sb.String()
+}
+
+func hasAnyRoleSkills(roleSkills map[string][]string, roles []string) bool {
+	for _, r := range roles {
+		if len(roleSkills[r]) > 0 {
+			return true
+		}
+	}
+	return false
 }

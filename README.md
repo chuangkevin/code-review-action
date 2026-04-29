@@ -50,16 +50,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: AI Code Review
-        uses: https://internal-gitea.example/ORG/code-review-action@main
+        uses: https://internal-gitea.example/ORG/code-review-action@v1.1.2
         with:
           gitea_token: ${{ secrets.REVIEW_TOKEN }}
           gemini_api_keys: ${{ secrets.GEMINI_API_KEYS }}
           gitea_public_url: https://internal-gitea.example
           skills_repo: http://srvhpgit:32000/HP/HPSkills.git
+          skills_repo_token: ${{ secrets.REVIEW_TOKEN }}
 ```
 
-> **注意**：`uses` 必須用完整 Gitea URL（Gitea runner 預設會去 github.com 找）。
-> `skills_repo` 用 runner 可連到的內部地址，`gitea_public_url` 用外部地址（給連結用）。
+> **注意**：
+> - `uses` 必須用完整 Gitea URL（Gitea runner 預設會去 github.com 找）
+> - 用版號 (`@v1.1.2`) 而非 `@main`／commit hash，看一眼就知道版本；新版發布見 [Releases](https://internal-gitea.example/ORG/code-review-action/releases)
+> - `skills_repo` 用 runner 可連到的內部地址，`gitea_public_url` 用外部地址（給連結用）
+> - 若 Gitea 實例需要驗證才能 clone（HP 內部就是），`skills_repo_token` **必須**設定，否則 skill 會 clone 失敗、但 review 仍會跑（無 domain knowledge）
 
 ### 3. 全部設定參數
 
@@ -77,14 +81,14 @@ jobs:
 | `max_diff_size` | `100000` | 單次 review 最大 diff 大小 (bytes)，超過自動分批 |
 | `review_roles` | `frontend,backend,security,business,architecture` | 啟用的 reviewer，逗號分隔 |
 | `cooldown_duration` | `120` | API key 遭 429 後的冷卻秒數 |
-| `max_retries` | `10` | 429 最大重試次數 |
+| `max_retries` | `10` | 重試次數上限（429 換 key 重試 / 5xx exponential backoff 重試） |
 
 ## 功能特色
 
 - **PR Review 形式** — 以正式 PR Review 提交，inline comment 標在 diff 的具體行上，不是一般留言
 - **多角色平行 review** — 5 個 agent 各有專長和人設，像真人團隊在討論
-- **Skill 自動匹配** — 從 Skills repo 讀取 domain knowledge，AI 根據 PR diff 內容自動選出相關 skill 注入 review context
-- **API Key Pool** — 多把 key 加權隨機分配，429 自動冷卻換 key，最多重試 10 次
+- **Skill 自動匹配** — 從 Skills repo 讀取 domain knowledge，AI 根據 PR diff 內容自動選出相關 skill 注入 review context；review summary 頂部會顯示「哪個 reviewer 用了哪些 skill」
+- **API Key Pool + 自動 Retry** — 多把 key 加權隨機分配，429 自動冷卻換 key、5xx 走 exponential backoff (1s/2s/4s/8s/16s) 重試
 - **大 PR 分批** — 超過 token 上限自動按檔案分批 review
 - **QA Gate** — 自動驗證 AI 輸出品質（過濾無效 comment、修正 severity）
 - **去重合併** — 多個 reviewer 指出同一行問題時，合併成一則 comment

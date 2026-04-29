@@ -71,6 +71,39 @@ func TestClient_Generate_429Retry(t *testing.T) {
 	}
 }
 
+func TestClient_Generate_503Retry(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts <= 1 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Write([]byte(`{"error":{"status":"UNAVAILABLE","message":"high demand"}}`))
+			return
+		}
+		resp := GenerateResponse{
+			Candidates: []Candidate{{
+				Content: Content{Parts: []Part{{Text: "ok"}}},
+			}},
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	pool := NewKeyPool([]string{"k1"}, 100*time.Millisecond)
+	client := NewClient(pool, "gemini-2.5-flash", WithBaseURL(server.URL), WithMaxRetries(3))
+
+	text, err := client.Generate("sys", "user")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if text != "ok" {
+		t.Errorf("text = %q, want ok", text)
+	}
+	if attempts != 2 {
+		t.Errorf("attempts = %d, want 2", attempts)
+	}
+}
+
 func TestClient_Generate_AllRetriesFail(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTooManyRequests)

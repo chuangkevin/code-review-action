@@ -65,10 +65,25 @@ func (c *Client) Generate(systemPrompt, userPrompt string) (string, error) {
 			c.pool.MarkCooldown(key)
 			continue
 		}
+		if isTransient(err) {
+			c.pool.Release(key)
+			backoff := transientBackoff(attempt)
+			fmt.Printf("      ⚠️  %v — retry in %s\n", err, backoff)
+			time.Sleep(backoff)
+			continue
+		}
 		fmt.Printf("      ❌ API Error: %v\n", err)
 		return "", err
 	}
-	return "", fmt.Errorf("all %d retries exhausted due to rate limiting", c.maxRetries)
+	return "", fmt.Errorf("all %d retries exhausted", c.maxRetries)
+}
+
+func transientBackoff(attempt int) time.Duration {
+	d := time.Duration(1<<attempt) * time.Second
+	if d > 16*time.Second {
+		d = 16 * time.Second
+	}
+	return d
 }
 
 func safeKeySuffix(key string) string {
@@ -114,6 +129,9 @@ func (c *Client) doRequest(apiKey, systemPrompt, userPrompt string) (string, err
 
 	if resp.StatusCode == http.StatusTooManyRequests {
 		return "", &RateLimitError{StatusCode: resp.StatusCode, Body: string(respBody)}
+	}
+	if resp.StatusCode >= 500 && resp.StatusCode < 600 {
+		return "", &TransientError{StatusCode: resp.StatusCode, Body: string(respBody)}
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, respBody)
@@ -169,7 +187,21 @@ func (e *RateLimitError) Error() string {
 	return fmt.Sprintf("rate limited (status %d): %s", e.StatusCode, e.Body)
 }
 
+type TransientError struct {
+	StatusCode int
+	Body       string
+}
+
+func (e *TransientError) Error() string {
+	return fmt.Sprintf("transient API error (status %d)", e.StatusCode)
+}
+
 func isRateLimited(err error) bool {
 	_, ok := err.(*RateLimitError)
+	return ok
+}
+
+func isTransient(err error) bool {
+	_, ok := err.(*TransientError)
 	return ok
 }

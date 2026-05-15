@@ -5,11 +5,13 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/kevinyoung1399/code-review-action/internal/ai"
 	"github.com/kevinyoung1399/code-review-action/internal/assembler"
 	"github.com/kevinyoung1399/code-review-action/internal/config"
 	"github.com/kevinyoung1399/code-review-action/internal/gemini"
 	"github.com/kevinyoung1399/code-review-action/internal/gitea"
 	"github.com/kevinyoung1399/code-review-action/internal/notify"
+	"github.com/kevinyoung1399/code-review-action/internal/opencode"
 	"github.com/kevinyoung1399/code-review-action/internal/reviewer"
 	"github.com/kevinyoung1399/code-review-action/internal/skills"
 )
@@ -30,9 +32,10 @@ func Run(cfg *config.Config) (*Result, error) {
 	fmt.Println()
 
 	// 1. Initialize
-	fmt.Printf("🔑 載入 %d 把 API key (cooldown: %ds, max retry: %d)\n", len(cfg.GeminiAPIKeys), cfg.CooldownDuration, cfg.MaxRetries)
-	pool := gemini.NewKeyPool(cfg.GeminiAPIKeys, cfg.CooldownDurationTime())
-	geminiClient := gemini.NewClient(pool, cfg.GeminiModel, gemini.WithMaxRetries(cfg.MaxRetries))
+	aiClient, err := newAIClient(cfg)
+	if err != nil {
+		return nil, err
+	}
 	giteaClient := gitea.NewClient(cfg.GiteaURL, cfg.GiteaToken)
 
 	// 2. Fetch PR
@@ -95,7 +98,7 @@ func Run(cfg *config.Config) (*Result, error) {
 				fmt.Printf("   ⚠️  載入 skill index 失敗: %v\n", err)
 			} else {
 				fmt.Printf("   📖 找到 %d 個 skills，開始匹配...\n", len(index))
-				matched, err := skills.MatchSkills(geminiClient, index, files, diff)
+				matched, err := skills.MatchSkills(aiClient, index, files, diff)
 				if err != nil {
 					fmt.Printf("   ⚠️  Skill matching 失敗: %v\n", err)
 				} else {
@@ -154,7 +157,7 @@ func Run(cfg *config.Config) (*Result, error) {
 		go func(r, d string) {
 			defer wg.Done()
 			fmt.Printf("   %s %s 正在閱讀 code...\n", reviewer.RoleEmoji(r), reviewer.RoleDisplayName(r))
-			res, err := reviewer.ReviewBatched(geminiClient, r, d, skillMap[r], prCtx, cfg.MaxDiffSize)
+			res, err := reviewer.ReviewBatched(aiClient, r, d, skillMap[r], prCtx, cfg.MaxDiffSize)
 			ch <- reviewEntry{result: res, err: err}
 			if err != nil {
 				fmt.Printf("   %s %s ❌ 失敗: %v\n", reviewer.RoleEmoji(r), reviewer.RoleDisplayName(r), err)
@@ -284,7 +287,7 @@ func Run(cfg *config.Config) (*Result, error) {
 	if cfg.SlackWebhookURL != "" {
 		if notify.ShouldNotify(cfg.SlackNotify, output) {
 			fmt.Println("   📱 發送 Slack 通知...")
-			prURL := fmt.Sprintf("%s/%s/%s/pulls/%d", cfg.GiteaURL, cfg.RepoOwner, cfg.RepoName, cfg.PRNumber)
+			prURL := fmt.Sprintf("%s/%s/%s/pulls/%d", cfg.GiteaPublicURL, cfg.RepoOwner, cfg.RepoName, cfg.PRNumber)
 			prTitle := fmt.Sprintf("#%d %s", cfg.PRNumber, prInfo.Title)
 			if err := notify.SendSlack(cfg.SlackWebhookURL, output, prURL, prTitle, prInfo.User.DisplayName()); err != nil {
 				fmt.Printf("   ⚠️  Slack 通知失敗: %v\n", err)
@@ -316,6 +319,24 @@ func Run(cfg *config.Config) (*Result, error) {
 		WarningCount:    warning,
 		SuggestionCount: suggestion,
 	}, nil
+}
+
+func newAIClient(cfg *config.Config) (ai.Generator, error) {
+	if cfg.UseOpenCode() {
+		fmt.Printf("🧠 使用 OpenCode provider: %s (agent: %s, model: %s)\n", cfg.OpenCodeBaseURL, cfg.OpenCodeAgent, cfg.OpenCodeModel)
+		return opencode.NewClient(
+			cfg.OpenCodeBaseURL,
+			cfg.OpenCodeModel,
+			opencode.WithBasicAuth(cfg.OpenCodeUsername, cfg.OpenCodePassword),
+			opencode.WithBearerToken(cfg.OpenCodeToken),
+			opencode.WithAgent(cfg.OpenCodeAgent),
+			opencode.WithTitle(fmt.Sprintf("code-review #%d", cfg.PRNumber)),
+		)
+	}
+
+	fmt.Printf("🔑 使用 Gemini provider: 載入 %d 把 API key (cooldown: %ds, max retry: %d)\n", len(cfg.GeminiAPIKeys), cfg.CooldownDuration, cfg.MaxRetries)
+	pool := gemini.NewKeyPool(cfg.GeminiAPIKeys, cfg.CooldownDurationTime())
+	return gemini.NewClient(pool, cfg.GeminiModel, gemini.WithMaxRetries(cfg.MaxRetries)), nil
 }
 
 func determineActiveRoles(configuredRoles []string, c *Classification) []string {

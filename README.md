@@ -50,18 +50,18 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: AI Code Review
-        uses: https://internal-gitea.example/ORG/code-review-action@v1.1.2
+        uses: https://your-gitea.example.com/ORG/code-review-action@v1.1.2
         with:
           gitea_token: ${{ secrets.REVIEW_TOKEN }}
           gemini_api_keys: ${{ secrets.GEMINI_API_KEYS }}
-          gitea_public_url: https://internal-gitea.example
+          gitea_public_url: https://your-gitea.example.com
           skills_repo: http://srvhpgit:32000/HP/HPSkills.git
           skills_repo_token: ${{ secrets.REVIEW_TOKEN }}
 ```
 
 > **注意**：
 > - `uses` 必須用完整 Gitea URL（Gitea runner 預設會去 github.com 找）
-> - 用版號 (`@v1.1.2`) 而非 `@main`／commit hash，看一眼就知道版本；新版發布見 [Releases](https://internal-gitea.example/ORG/code-review-action/releases)
+> - 用版號 (`@v1.1.2`) 而非 `@main`／commit hash，看一眼就知道版本；新版發布見 [Releases](https://your-gitea.example.com/ORG/code-review-action/releases)
 > - `skills_repo` 用 runner 可連到的內部地址，`gitea_public_url` 用外部地址（給連結用）
 > - 若 Gitea 實例需要驗證才能 clone（HP 內部就是），`skills_repo_token` **必須**設定，否則 skill 會 clone 失敗、但 review 仍會跑（無 domain knowledge）
 
